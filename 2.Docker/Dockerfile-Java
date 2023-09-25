@@ -1,0 +1,24 @@
+FROM amazoncorretto:8-alpine
+RUN mkdir -p /build
+WORKDIR /build
+COPY target/*.war /build/app.war
+RUN wget https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v1.16.0/opentelemetry-javaagent.jar -O /build/opentelemetry-javaagent-all.jar
+EXPOSE 8080
+CMD [ "java" ,"-javaagent:/build/opentelemetry-javaagent-all.jar", "-jar" , "/build/app.war" ]
+
+
+
+
+
+
+#Linux with OpenJDK JRE
+FROM amazoncorretto:8-alpine
+#IMAGES WORKING DIR
+WORKDIR /build
+# copy WAR into image
+COPY target/account.war /build/account.war
+RUN wget https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v1.16.0/opentelemetry-javaagent.jar -O /build/opentelemetry-javaagent-all.jar
+#Portnumber
+EXPOSE 8080
+# run application with this command line 
+CMD ["java" ,"-javaagent:/build/opentelemetry-javaagent-all.jar" , "-jar" , "/build/account.war"]

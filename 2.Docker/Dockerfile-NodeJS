@@ -1,0 +1,51 @@
+# FROM node:8.16.1-alpine as builder
+FROM node:14.15.1-alpine3.12 as builder
+
+ARG DEPLOYMENT_ENV=development
+RUN apk update && apk add --no-cache make git
+WORKDIR /app
+COPY package.json package-lock.json /app/
+RUN npm install --prefer-offline --no-audit --progress=false
+COPY . /app/
+RUN npm run build:$DEPLOYMENT_ENV --verbose
+
+FROM nginx:alpine
+RUN rm -rf /usr/share/nginx/html/*
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/dist/ /usr/share/nginx/html/investor
+RUN mkdir /usr/share/nginx/html/investor/investor
+COPY --from=builder /app/dist/ /usr/share/nginx/html/investor/investor/
+COPY entrypoint.sh /
+# CMD ["/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
+
+# EXPOSE 80
+# CMD ["nginx", "-g", "daemon off;"]
+
+
+
+
+# FROM node:lts
+# FROM node:lts-alpine
+FROM node:14.15.1-alpine3.12 as builder
+RUN mkdir -p /var/log/vcpl-middleware && chown -R node:node /var/log/vcpl-middleware
+RUN mkdir -p /home/node/app/node_modules && chown -R node:node /home/node/app
+# RUN apt-get update && apt-get install python-dev python-pip -y && pip install awscli
+RUN apk update && apk add --no-cache \
+                make \
+                git \
+                py-pip \
+                && pip install awscli
+
+WORKDIR /home/node/app
+COPY package*.json ./
+RUN npm install pm2 -g
+USER node
+RUN mkdir -p /home/node/.vcmw/ && mkdir -p /home/node/.aws
+COPY env-config/credentials /home/node/.aws/
+COPY env-config/oAuthToken.json /home/node/.vcmw/
+RUN npm install
+COPY --chown=node:node . .
+RUN mv env-config/.env . && rm -rf middleware-env-config-sg/ env-config
+EXPOSE 3000
+CMD ["pm2-runtime", "./bin/www"]

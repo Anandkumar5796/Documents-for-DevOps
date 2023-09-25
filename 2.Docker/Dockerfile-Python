@@ -1,0 +1,16 @@
+FROM python:3.8.10
+EXPOSE 4006
+
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
+RUN export JAVA_HOME
+ADD requirements.txt .
+COPY . /
+RUN mkdir -p /wca_log
+RUN python -m pip install --upgrade pip
+RUN python -m pip install -r requirements.txt
+RUN apt update -y && apt-get install -y software-properties-common && \
+   apt-add-repository 'deb http://archive.debian.org/debian stretch main contrib non-free' && apt update -y && \
+   apt-get install -y openjdk-8-jdk-headless && \
+   export JAVA_HOME && \
+   apt-get clean
+CMD [ "python3", "-m", "app"]
