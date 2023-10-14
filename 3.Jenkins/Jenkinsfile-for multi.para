@@ -1,0 +1,173 @@
+ pipeline {
+    agent any
+     parameters{
+        choice(name: 'DEPLOY_ENV',choices: ['DEV', 'QA', 'STAGE'], description: 'Select field for target environment')
+         booleanParam(name: 'Deploy', defaultValue: false, description: 'Enable push image to ECR & Deploy')
+        choice(name: 'DEPLOY_ENVIRONMENT',choices: ['Select Environment', 'platform', 'platformwa02', 'platformwa02b', 'platform03a', 'neobank', 'neobank02', 'platform03'], description: 'Select Deployment Environment')
+    }
+
+    environment {
+            K8S_API_ENDPOINT = credentials('k8s-api')
+    }
+    stages {
+        stage("Initialize  Variables") {
+            steps {
+
+                script {
+                    nameSpace = "${DEPLOY_ENV}"
+                    echo "$nameSpace"
+                    if(nameSpace == 'DEV'){
+                        env.NAME_SPACE = "platform-web-dev"
+                    }else if(nameSpace == 'QA'){
+                        env.NAME_SPACE = "platform-web-qa"
+                    }else if(nameSpace == 'STAGE'){
+                        env.NAME_SPACE = "platform-web-stage"
+                    }
+
+                    echo "$env.NAME_SPACE"
+                    echo "<<<<<<<Trigger Build>>>>>>>>>>>>"
+                    echo "DEPLOY_ENV: ${DEPLOY_ENV}"
+                    env.ECRREPOURI = "046368006331.dkr.ecr.ap-southeast-1.amazonaws.com/platform-web-eks"
+                    env.DOCKERPUSHURL = "https://046368006331.dkr.ecr.ap-southeast-1.amazonaws.com/platform-web-eks"
+                    sh "cd ${env.WORKSPACE}"
+                    env.BRANCH_NAME = "${sh(script:'git name-rev --name-only HEAD', returnStdout: true).replaceAll('remotes/origin/feature/','')}"
+                    env.BRANCH_NAME = env.BRANCH_NAME.trim()
+                    BUILDVERSION = sh(script: "echo `date +%Y-%m-%d-%H-%M-%S`", returnStdout: true).trim()
+                    env.TAG = "${BUILDVERSION}"
+                    env.IMAGE = "${env.ECRREPOURI}" + ":" + "${env.TAG}"
+               }
+            }
+        }
+
+        stage('Git Module') {
+             steps {
+                sh 'git submodule update --init --recursive'
+               
+              }
+        }
+              
+        stage('Sonar Scan'){
+              environment {
+              scannerHome = tool 'sonar-scanner'
+             }
+             steps {
+                 withSonarQubeEnv('sonarqube') {
+                      sh "${scannerHome}/bin/sonar-scanner \
+                         -D sonar.projectKey=Platform-WA2.0 \
+                         -D sonar.projectName=Platform-WA2.0-NodeJS \
+                         -D sonar.projectVersion=1.0.0 \
+                         -D sonar.language=js \
+                         -D sonar.sourceEncoding=UTF-8 \
+                         -D sonar.sources=./ \
+                         -D sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/src/spec/mock/shared/store/mock-all-cards-store.ts,**/*.css,**/*.html,**/*.scss,**/src/app/modules/payment/component/** \
+                         -D sonar.issuesReport.html.enable=true \
+                         -D sonar.report.export.path=report.json"
+                 }
+             }
+         }
+
+        stage("Quality gate") {
+            steps {
+                waitForQualityGate abortPipeline: false
+            }
+        }
+
+        
+        stage("Docker Build") {
+            when {
+                expression {params.Deploy}
+            }
+            steps {
+                sh """
+                    docker build --no-cache . -t ${env.ECRREPOURI}:${env.TAG} -f ${env.WORKSPACE}/Dockerfile
+                """
+            }
+        }
+
+        stage("Docker Push") {
+            when {
+                expression {params.Deploy}
+            }
+            steps
+              {
+                script
+                 {
+                     sh("eval \$(aws2 ecr get-login --no-include-email)")
+                     docker.withRegistry("${env.DOCKERPUSHURL}", "ecr:ap-southeast-1:aws-creds") {
+                        docker.image("${env.IMAGE}").push()
+                    }
+                }
+            }
+        }
+    
+        stage("k8S Deployment") {
+           steps {
+              script{
+                if ( params.DEPLOY_ENVIRONMENT == "Select Environment") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        date
+                        pwd"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                      }
+                    } //if end
+                if ( params.DEPLOY_ENVIRONMENT == "platform") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platform-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platform-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f devops/platform-deployment.yml"
+                      }
+                    } //if end
+               if ( params.DEPLOY_ENVIRONMENT == "platformwa02") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platform02-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platform02-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f devops/platform02-deployment.yml"
+                      }
+                    } //if end
+               if ( params.DEPLOY_ENVIRONMENT == "platformwa02b") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platform02b-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platform02b-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f devops/platform02b-deployment.yml"
+                      }
+                    } //if end
+               if ( params.DEPLOY_ENVIRONMENT == "platform03a") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platform03a-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platform03a-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f devops/platform03a-deployment.yml"
+                      }
+                    } //if end                    
+                if ( params.DEPLOY_ENVIRONMENT == "neobank") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platformnb-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platformnb-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f devops/platformnb-deployment.yml"
+                      }
+                    } //if end
+                if ( params.DEPLOY_ENVIRONMENT == "neobank02") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platformnb02-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platformnb02-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f devops/platformnb02-deployment.yml"
+                      }
+                    } //if end
+                     if ( params.DEPLOY_ENVIRONMENT == "platform03") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platform03-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platform03-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f devops/platform03-deployment.yml"
+                      }
+                    } //if end
+                }
+            }
+         }
+    }
+}   

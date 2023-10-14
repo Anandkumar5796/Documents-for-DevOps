@@ -1,0 +1,108 @@
+pipeline {
+    agent any
+     parameters{
+        choice(name: 'DEPLOY_ENV',choices: ['DEV', 'QA', 'STAGE'], description: 'Select field for target environment')
+        booleanParam(name: 'SkipTests', defaultValue: false, description: '')
+        booleanParam(name: 'Deploy', defaultValue: false, description: 'Enable push image to ECR & Deploy')
+    }
+
+    environment {
+            K8S_API_ENDPOINT = credentials('k8s-api')
+    }
+    stages {
+        stage("Initialize  Variables") {
+            steps {
+
+                script {
+                    nameSpace = "${DEPLOY_ENV}"
+                    echo "$nameSpace"
+                    if(nameSpace == 'DEV'){
+                        env.NAME_SPACE = "platform-web-dev"
+                    }else if(nameSpace == 'QA'){
+                        env.NAME_SPACE = "platform-web-qa"
+                    }else if(nameSpace == 'STAGE'){
+                        env.NAME_SPACE = "platform-web-stage"
+                    }
+
+                    echo "$env.NAME_SPACE"
+                    echo "<<<<<<<Trigger Build>>>>>>>>>>>>"
+                    echo "DEPLOY_ENV: ${DEPLOY_ENV}"
+                    echo "SkipTests: ${SkipTests}"
+                    env.ECRREPOURI = "046368006331.dkr.ecr.ap-southeast-1.amazonaws.com/statement-generator-eks"
+                    env.DOCKERPUSHURL = "https://046368006331.dkr.ecr.ap-southeast-1.amazonaws.com/statement-generator-eks"
+                    env.TAG = "${DEPLOY_ENV}" + "-" + "${BUILD_NUMBER}"
+                    env.IMAGE = "${env.ECRREPOURI}" + ":" + "${env.TAG}"
+                    env.FILENAME = "statement-generator-deployment.yml"
+                    env.k8s = "devops/statement-generator-deployment.yml"
+                    sh "cd ${env.WORKSPACE}"
+					env.COMMIT = sh(returnStdout: true, script: 'echo $(git rev-parse --short HEAD)').trim()
+					env.GIT_COMMIT_MSG = sh (script: 'git log -1 --pretty=%B ${GIT_COMMIT}', returnStdout: true).trim()
+					env.GIT_AUTHOR = sh (script: 'git log -1 --pretty=%cn ${GIT_COMMIT}', returnStdout: true).trim()
+                }
+            }
+        }
+
+          stage('Sonar Scan'){
+              environment {
+              scannerHome = tool 'sonar-scanner'
+             }
+             steps {
+                 withSonarQubeEnv('sonarqube') {
+                      sh "${scannerHome}/bin/sonar-scanner \
+                         -D sonar.projectKey=middleware-nodejs \
+                         -D sonar.projectName=ValidusMiddlewareMobile-NodeJS \
+                         -D sonar.projectVersion=1.0.0 \
+                         -D sonar.language=js \
+                         -D sonar.sourceEncoding=UTF-8 \
+                         -D sonar.sources=./ \
+                         -D sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/src/spec/mock/shared/store/mock-all-cards-store.ts,**/*.css,**/*.html,**/*.scss,**/src/app/modules/payment/component/** \
+                         -D sonar.issuesReport.html.enable=true \
+                         -D sonar.report.export.path=report.json"
+                 }
+             }
+         }
+
+        stage("Docker Build") {
+            when {
+                expression {params.Deploy}
+            }
+            steps {
+                sh """
+                    docker build . -t ${env.ECRREPOURI}:${env.TAG} -f ${env.WORKSPACE}/Dockerfile
+                """
+            }
+        }
+
+        stage("Docker Push") {
+            when {
+                expression {params.Deploy}
+            }
+            steps
+              {
+                script
+                 {
+                     sh("eval \$(aws2 ecr get-login --no-include-email)")
+                     docker.withRegistry("${env.DOCKERPUSHURL}", "ecr:ap-southeast-1:aws-creds") {
+                        docker.image("${env.IMAGE}").push()
+                    }
+                }
+            }
+        }
+
+        stage("k8S Deployment") {
+            when {
+                expression {params.Deploy}
+            }
+           steps {
+              script{
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" ${env.FILENAME}
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" ${env.FILENAME}"""
+                withKubeConfig(caCertificate: '', clusterName: 'sme-preprod', contextName: '', credentialsId: 'kubernetes-service-account', namespace: '', serverUrl: "${K8S_API_ENDPOINT}") {
+                        sh "kubectl apply -f ${env.k8s}"
+                }
+             }
+           }
+        }
+    }
+}

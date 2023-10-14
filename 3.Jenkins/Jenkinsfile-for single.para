@@ -1,0 +1,130 @@
+ pipeline {
+    agent any
+     parameters{
+        choice(name: 'DEPLOY_ENV',choices: ['production'], description: 'Select field for target environment')
+        booleanParam(name: 'Scan', defaultValue: false, description: 'Sonar Scan')
+        booleanParam(name: 'Deploy', defaultValue: false, description: 'Enable push image to ECR')
+        choice(name: 'DEPLOY_ENVIRONMENT',choices: ['Select Environment', 'platform-sg'], description: 'Select Deployment Environment')
+    }
+
+    environment {
+            K8S_API_ENDPOINT_SG = credentials('k8s-api-sg')
+    }
+    stages {
+        stage("Initialize  Variables") {
+            steps {
+
+                script {
+                    nameSpace = "${DEPLOY_ENV}"
+                    echo "$nameSpace"
+                    if(nameSpace == 'production'){
+                        env.NAME_SPACE = "platform-production-singapore"
+                    }
+
+                    echo "$env.NAME_SPACE"
+                    echo "<<<<<<<Trigger Build>>>>>>>>>>>>"
+                    echo "DEPLOY_ENV: ${DEPLOY_ENV}"
+                    env.ECRREPOURI = "046368006331.dkr.ecr.ap-southeast-1.amazonaws.com/platform-web-eks"
+                    env.DOCKERPUSHURL = "https://046368006331.dkr.ecr.ap-southeast-1.amazonaws.com/platform-web-eks"
+                    sh "cd ${env.WORKSPACE}"
+                    env.BRANCH_NAME = "${sh(script:'git name-rev --name-only HEAD', returnStdout: true).replaceAll('remotes/origin/feature/','')}"
+                    env.BRANCH_NAME = env.BRANCH_NAME.trim()
+                    BUILDVERSION = sh(script: "echo `date +%Y-%m-%d-%H-%M-%S`", returnStdout: true).trim()
+                    env.TAG = "${BUILDVERSION}"
+                    env.IMAGE = "${env.ECRREPOURI}" + ":" + "${env.TAG}"
+               }
+            }
+        }
+
+        stage('Git Module') {
+             steps {
+                sh 'git submodule update --init --recursive'
+               
+              }
+        }
+              
+        stage('Sonar Scan'){
+            when {
+                expression {params.Scan}
+            }
+              environment {
+              scannerHome = tool 'sonar-scanner'
+             }
+             steps {
+                 withSonarQubeEnv('sonarqube') {
+                      sh "${scannerHome}/bin/sonar-scanner \
+                         -D sonar.projectKey=Authenticator \
+                         -D sonar.projectName=Authenticator \
+                         -D sonar.projectVersion=1.0.0 \
+                         -D sonar.language=js \
+                         -D sonar.sourceEncoding=UTF-8 \
+                         -D sonar.sources=./ \
+                         -D sonar.exclusions=**/node_modules/**,**/*.spec.ts,**/src/spec/mock/shared/store/mock-all-cards-store.ts,**/*.css,**/*.html,**/*.scss,**/src/app/modules/payment/component/** \
+                         -D sonar.issuesReport.html.enable=true \
+                         -D sonar.report.export.path=report.json"
+                }
+             }
+         }
+
+        stage("Quality gate") {
+                        when {
+                expression {params.Scan}
+            }
+            steps {
+                waitForQualityGate abortPipeline: false
+            }
+        }
+
+        
+        stage("Docker Build") {
+            when {
+                expression {params.Deploy}
+            }
+            steps {
+                sh """
+                    sed -i "s|DEPLOYMENT_ENV|${DEPLOY_ENV}|g" ${env.WORKSPACE}/Dockerfile-eks
+                    docker build . -t ${env.ECRREPOURI}:${env.TAG} -f ${env.WORKSPACE}/Dockerfile-eks
+                """
+            }
+        }
+
+        stage("Docker Push") {
+            when {
+                expression {params.Deploy}
+            }
+            steps
+              {
+                script
+                 {
+                     sh("eval \$(aws2 ecr get-login --no-include-email)")
+                     docker.withRegistry("${env.DOCKERPUSHURL}", "ecr:ap-southeast-1:aws-creds") {
+                        docker.image("${env.IMAGE}").push()
+                        sh "docker rmi ${env.IMAGE} | true"
+                    }
+                }
+            }
+        }
+    
+        stage("k8S Deployment") {
+           steps {
+              script{
+                if ( params.DEPLOY_ENVIRONMENT == "Select Environment") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        date
+                        pwd"""
+                withKubeConfig(caCertificate: '', clusterName: 'VALIDUS-SG-PROD-EKS-CLUSTER', contextName: '', credentialsId: 'k8s-sg', namespace: '', serverUrl: "${K8S_API_ENDPOINT_SG}") {
+                      }
+                    } //if end
+                if ( params.DEPLOY_ENVIRONMENT == "platform-sg") { 
+                sh """ cd ${env.WORKSPACE}/devops
+                        sed -i "s|CONTAINER_IMAGE|${env.IMAGE}|g" platform-sg-deployment.yml
+                        sed -i "s|NAME_SPACE|${env.NAME_SPACE}|g" platform-sg-deployment.yml"""
+                withKubeConfig(caCertificate: '', clusterName: 'VALIDUS-SG-PROD-EKS-CLUSTER', contextName: '', credentialsId: 'k8s-sg', namespace: '', serverUrl: "${K8S_API_ENDPOINT_SG}") {
+                        sh "kubectl apply -f devops/platform-sg-deployment.yml"
+                      }
+                    } //if end
+                }
+            }
+         }
+    }
+}   
