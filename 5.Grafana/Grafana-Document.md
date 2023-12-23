@@ -67,3 +67,6 @@ API and HTTP Endpoints : Grafana provides RESTful APIs and HTTP endpoints that a
 
 
 
+**Grfana dashbaord query**
+
+{namespace="$namespace", container=~"$container"}|~ ".*$search.*" | json log="log" | line_format `{{.log}}`

@@ -1,8 +1,12 @@
 **Kubernetes overview**
 
-Kubernetes, also known as K8s, is an open-source system for automating deployment, scaling, and management of containerized applications.
+Kubernetes, also known as "K8s", is an open-source container orchestration platform developed by Google. 
 
-**Kubernetes main Components**
+kubernetes It is designed to automate the deployment, scaling, and management of containerized applications across a cluster of nodes. 
+
+Kubernetes provides a consistent and reliable way to manage applications, regardless of whether they are running on-premises, in the cloud, or in hybrid environments
+
+**Kubernetes main Components** 
 
 1.Master Components:
 These components manage the overall Kubernetes cluster.
@@ -39,15 +43,29 @@ Persistent Volume Claims (PVC): A request for a specific amount of storage with 
 
 3.Storage : Persistent Volumes (PVs) and Persistent Volume Claims (PVCs) manage storage resources.Allows data to persist beyond pod lifecycle.
 
-4.Pods : The smallest deployable units in Kubernetes.Can contain one or more containers that share network and storage resources.
+4.Pods : In Kubernetes, a "pod" is the smallest and most basic unit of deployment. 
+It represents a single instance of a running process within the cluster. 
+kubernetes A pod encapsulates one or more containers, storage resources, network confiqurations, and other options required to run a specific set of containers together. 
+Pods are typically created and managed using higher level abstractions such as Deployments, ReplicaSets, or StatefulSets, which provide additional features like scaling, rolling updates, and self-healing capabilities. 
+Pods provide several benefits, including resource isolation, flexible deployment strategies, easy scaling, and enhanced reliability..
 
-5.Deployments : Manage the deployment and scaling of pods.Support rolling updates and rollbacks.
+5.Deployments : In Kubernetes, a Deployment is an object that provides declarative updates and management for a set of replica Pods. 
+kubernetes When you create a Deployment, you specify the desired state by defining the container images, number of of replicas, and other configuration parameters. 
+Kubernetes then ensures that the actual state matches the desired state. 
+If there are any discrepancies, Kubernetes automatically takes action to reconcile the state, creating or deleting Pods as necessary
+
+6.ReplicaSet: In Kubernetes, a ReplicaSet is an object that ensures a specified number of replica Pods are running at any given time. 
+kubernetes It is responsible for maintaining the desired replica count and managing the lifecycle of the Pods. ReplicaSets are typically used to manage stateless applications where individual instances of the application can be treated as interchangeable. 
+They help in achieving high availability and scalability by automatically scaling the number of replicas up or down based on the defined specifications. 
+nextops When you create a ReplicaSet, you specify the desired number of replicas and provide a template for creating the Pods.
 
 6.Services : Provide network connectivity to a set of pods.Allow load balancing and service discovery.
 
-7.ConfigMaps and Secrets : ConfigMaps store configuration data that can be consumed by pods.Secrets store sensitive data like passwords and tokens.
+7.ConfigMaps : In Kubernetes, a configmap is an API object used to store configuration data consumed by pods or other resources in a cluster. 
+kubernetes provides a way to decouple configuration settings from containerized applications, making it easy to manage and update configuration data without modifying application code or container images. ConfigMaps store key-value pairs or provide the ability to mount configuration files as data. 
+This may include environment variables, command-line arguments, configuration files, or any other configuration data required by your application.
 
-8.Namespaces : Logical isolation of cluster resources. Allows multiple teams or applications to share a single cluster.
+8.Namespaces : Namespaces are a way to create virtual clusters within a physical cluster. They provide a way to divide cluster resources into logical groups, enabling multiple teams or applications to coexist and operate independently within the same Kubernetes cluster. kubernetes Namespaces help in organizing and isolating resources, improving resource utilization, and providing a level of separation between different environments, projects, or teams. They act as a scope for Kubernetes objects, such as pods, services, deployments, configmaps, and secrets. Each object in Kubernetes belongs to a specific namespace
 
 9.Nodes : Physical or virtual machines that run containers. Managed by the Kubernetes control plane.
 
@@ -61,7 +79,14 @@ Persistent Volume Claims (PVC): A request for a specific amount of storage with 
 
 14.DaemonSets : Ensures that a specific pod runs on all (or specific) nodes in the cluster.Useful for system daemons or monitoring agents.
 
-15.StatefulSets : Manages the deployment of stateful applications with unique network identities and persistent storage.
+15.StatefulSets : StatefulSets in Kubernetes are a workload API object used to manage stateful applications Unlike the traditional deployment of stateless applications, stateful applications require stable and unique network identities, stable storage, and ordered and predictable deployment and scaling. kubernetes StatefulSets are commonly used for deploying and managing stateful applications such as databases (e.g., MySQL, PostgreSQL), messaging systems (e.g., Kafka), and other applications that require stable network identities and persistent storage.
+
+Stateful Pod Scaling: StatefulSets support both vertical and horizontal scaling. Vertical scaling involves changing the resources (CPU and memory) allocated to each pod, while horizontal scaling involves adding or removing or removing pods from the StatefulSet. kubernetes Ordered Termination: Termination: When scaling down or terminating pods in a StatefulSet, Kubernetes ensures that the pods are terminated in the reverse order of their creation. This allows for orderly application shutdown and ensures data integrity and consistency
+
+Stable Storage: StatefulSets provide stable and unique storage volumes for each pod. Persistent Volumes (PVs) and Persistent Volume Claims (PVCs) are used to provide storage to the pods, allowing data to be persisted and retained across pod restarts and rescheduling. kubernetes Headless Service: StatefulSets automatically create a Headless Service, which allows each pod to have its own DNS entry. This enables direct communication between pods using their unique hostnames
+
+Stateful Pod Scaling: StatefulSets support both vertical and horizontal scaling. Vertical scaling involves changing the resources (CPU and memory) allocated to each pod, while horizontal scaling involves adding or removing or removing pods from the StatefulSet. kubernetes Ordered Termination: When scaling down or terminating pods in a StatefulSet, Kubernetes ensures that the pods are terminated in the reverse order of their creation. This allows for orderly application shutdown and ensures data integrity and consistency
+
 
 16.Horizontal Pod Autoscaling : Automatically adjusts the number of replicas in a Deployment or ReplicationController based on resource utilization.
 
@@ -72,6 +97,12 @@ Persistent Volume Claims (PVC): A request for a specific amount of storage with 
 19.Custom Resource Definitions (CRDs) : Extend the Kubernetes API to support custom resources and controllers.
 
 20.Metrics and Monitoring : Kubernetes provides integration with monitoring tools like Prometheus for collecting cluster and application metrics.
+
+21. Persistent Volume: Persistent Volume (PV) is a piece of storage provisioned in a cluster that can be dynamically allocated and administrators. managed by kubernetes PVs provide a way to decouple storage from the lifecycle of pods and allow data to persist beyond the lifetime of individual pods. Persistent Volumes serve as an abstraction layer between the physical storage (such as a network attached storage or local storage) and the application's need for storage. They enable applications to request storage resources without needing to know the details of the underlying infrastructure
+
+PVs can be provisioned statically or dynamically. Static provisioning involves creating PVs in advance, kubernetes while dynamic provisioning allows PVs to be created on-demand when requested by the applications. Storage Classes: Dynamic provisioning of PVs is facilitated through the use of Storage Classes. Storage Classes define different classes of storage with specific characteristics (e.g., performance, access modes) and specify the provisioner responsible for dynamically creating the storage
+
+22. Persistent Volume Claims (PVCs): Persistent Volume Claims (PVCs) in Kubernetes have three different reclaim policies that determine what happens to the associated Persistent Volume (PV) when the PVC is deleted or no longer needed. kubernetes Retain: With the "Retain" policy, the PV associated with the PVC is not automatically deleted or released when the PVC is deleted. Instead, the PV is retained, and its contents are preserved. Delete: The "Delete" policy indicates that the associated PV should be automatically deleted when the PVC is deleted. nextops Recycle (Deprecated): The "Recycle" policy is deprecated and no longer recommended for use.
 
 **How to connect clsuter in local machine**
 
@@ -263,6 +294,12 @@ spec:
   hostPath:
     path: /data/my-pv
 
+
+**Kubernetes Dashboard**
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+
+http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
 
 
 
