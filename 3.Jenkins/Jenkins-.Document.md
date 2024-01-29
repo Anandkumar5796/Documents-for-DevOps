@@ -4,19 +4,36 @@ Jenkins is an open-source automation server that facilitates the continuous inte
 
 **Installing Jenkins on Ubuntu**
 
-This is the Debian package repository of Jenkins to automate installation and upgrade. To use this repository, first add the key to your system:
-  curl -fsSL https://pkg.jenkins.io/debian/jenkins.io-2023.key | sudo tee \
-    /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+ To install Jenkins on an Ubuntu machine
 
-Then add a Jenkins apt repository entry: 
-  echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
-    https://pkg.jenkins.io/debian binary/ | sudo tee \
-    /etc/apt/sources.list.d/jenkins.list > /dev/null
+Step 1 : Update Package Lists : Make sure your package lists are up-to-date:
+sudo apt update
 
-Update your local package index, then finally install Jenkins: 
-  sudo apt-get update
-  sudo apt-get install fontconfig openjdk-17-jre
-  sudo apt-get install jenkins
+Step 2 : Install Java : Jenkins requires Java to run. You can install OpenJDK:
+sudo apt install openjdk-11-jdk
+
+Step 3: Add Jenkins Repository and Key : Add the Jenkins repository key to your system:
+wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add –
+
+Add the Jenkins repository to the sources list:
+sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+
+Step 4: Install Jenkins : Update your package lists again and install Jenkins:
+sudo apt update
+sudo apt install jenkins
+
+Step 5: Start Jenkins : Start the Jenkins service:
+sudo systemctl start jenkins
+
+Enable Jenkins to start on boot:
+sudo systemctl enable jenkins
+
+Step 6: Open Jenkins in your browser : Jenkins runs on port 8080 by default. Open your web browser and navigate to:
+http://your_server_ip_or_domain:8080
+
+You will be prompted to unlock Jenkins. Retrieve the initial administrator password by running:
+
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
 **Installing Jenkins on java**
 

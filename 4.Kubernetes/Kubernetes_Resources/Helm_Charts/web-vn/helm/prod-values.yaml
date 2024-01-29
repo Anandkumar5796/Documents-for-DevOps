@@ -1,0 +1,123 @@
+replicaCount: 1
+
+image:
+  repository: 046368006331.dkr.ecr.ap-southeast-1.amazonaws.com/web-vn-prod
+  pullPolicy: "Always"
+  tag: "latest"
+
+extraLabels:
+  app-name: "ebiz-service"
+  environment: "prod"
+  tier: "web"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+#livenessProbe and readinessProbe
+livenessProbe:
+  enabled: false
+  path: /actuator/health
+  port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 30
+
+readinessProbe:
+  enabled: false
+  path: /actuator/health
+  port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+
+serviceAccount:
+  create: false
+  automount: false
+  name: ""
+
+podAnnotations: {}
+
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+
+service:
+  type: ClusterIP
+  port: 80         # Service Port
+  targetPort: 80   # Application port
+
+ingress:
+  enabled: true
+  className: "nginx"   #That all need to keep this value unchanged as this is what decides which ingress controller to be used.
+  annotations: 
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    kubernetes.io/tls-acme: 'true'
+  hosts:
+    - host: ebiz.validus.vn
+      serviceName: ebiz-web-vn-service
+      servicePort: 80
+      paths:
+        - path: /
+          pathType: Prefix
+
+
+  tls: []
+
+# #Sample application resources
+# resources: 
+# limits:
+#   memory: 200Mi
+#   cpu: 300m
+# requests:
+#   memory: 100Mi
+#   cpu: 100m
+
+# #Node application resources
+resources:
+  requests:
+    memory: "128Mi"  # Request 128Mi of memory
+    cpu: "250m"      # Request 250 milliCPU (0.25 CPU)
+  limits:
+    memory: "256Mi"  # Limit to 256Mi of memory
+    cpu: "500m"      # Limit to 500 milliCPU (0.5 CPU)
+
+# #Java appliacation resources
+# resources:
+#   requests:
+#     memory: "512Mi"  # Request 512MB of memory
+#     cpu: "500m"      # Request 500 milliCPU (0.5 CPU)
+#   limits:
+#     memory: "1Gi"    # Limit to 1GB of memory
+#     cpu: "1"         # Limit to 1 CPU core
+
+# #Python appliacation resources 
+# resources:
+#   requests:
+#     memory: "256Mi"  # Request 256MB of memory
+#     cpu: "250m"      # Request 250 milliCPU (0.25 CPU cores)
+#   limits:
+#     memory: "512Mi"  # Limit to 512MB of memory
+#     cpu: "500m"      # Limit to 500 milliCPU (0.5 CPU cores)
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+nodeSelector: {}
+# Nodeaffinity
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: Project
+              operator: In
+              values:
+                - Platform

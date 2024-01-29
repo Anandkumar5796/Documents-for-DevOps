@@ -1,0 +1,6 @@
+apiVersion: v2
+name: platform-web-vn-service
+description: A Helm chart for service for platform-web-vn-service
+type: application
+version: 0.1.0
+appVersion: "1.16.0"
