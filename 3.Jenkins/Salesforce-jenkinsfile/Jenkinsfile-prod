@@ -1,0 +1,91 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(name: 'DEPLOY_TYPE', choices: ['Deploy entire metadata', 'Deploy Updated metadata'], description: 'Select deployment type')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Clone the Git repository
+                git branch: 'devops',
+                    credentialsId: 'dhana-devops-admin', // Replace with your credentials ID
+                    url: 'https://bitbucket.org/vcpl/salesforce-sg-qa/src/integration'
+            }
+        }
+
+        stage('Authenticate with Salesforce') {
+            steps {
+                // Authenticate with your Salesforce org using Salesforce CLI
+                sh 'sfdx auth:jwt:grant --clientid 3MVG9N6eDmZRVJOlkThyq5qlkqWZMOfuIO25JydjR7vhj_4MWrIcwaK6mpMK0diNNw5AWpjyz0jK0ZJ2gLLt6 --jwtkeyfile /var/lib/jenkins/openssl/bin/server.key --username mfiflex.code@88trialforce.com.sgvqa --setdefaultdevhubusername --setalias my-hub-org'
+            }
+        }
+
+        stage('Deploy Deploy Updated metadata Metadata') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Updated metadata' }
+            }
+            steps {
+                // Get a list of changed files between the current and previous Git commits
+                script {
+                    def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^..HEAD").trim().split("\\n")
+                    // Filter out files that are not part of the Salesforce DX project (if needed)
+                    def sourceFiles = changedFiles.findAll { it.startsWith('force-app/') }
+                    
+                    if (!sourceFiles.isEmpty()) {
+                        // Deploy Deploy Updated metadata metadata files
+                        sh "sfdx force:source:deploy -u my-hub-org --sourcepath ${sourceFiles.join(',')}"
+                    } else {
+                        echo "No Salesforce metadata files changed. No deployment needed."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Deploy entire metadata Metadata') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy entire metadata' }
+            }
+            steps {
+                // Deploy the Deploy entire metadata metadata
+                sh "sfdx force:source:deploy -p /var/lib/jenkins/workspace/Saleforce-SG/neewone/force-app/main/default/classes -u my-hub-org"
+            }
+        }
+
+         stage('Run Apex Unit Tests') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Updated metadata' }
+            }
+                steps {
+                    script {
+                        def affectedClasses = sh(script: "git diff --name-only HEAD^ HEAD | grep '.cls'", returnStdout: true).trim()
+                        
+                        if (affectedClasses) {
+                            echo "Affected .cls files:"
+                            echo "${affectedClasses}"
+                            
+                            // Extract class names from filenames
+                            def classNames = affectedClasses.tokenize('\n').collect { it.replaceAll('.*/', '').replaceAll('.cls$', '') }
+                            
+                            // Run Apex tests for the affected classes
+                            sh "sfdx force:apex:test:run -u my-hub-org --synchronous --classnames ${classNames.join(',')}"
+                        } else {
+                            echo "No .cls files were affected."
+                        }
+                    }
+                }        
+
+           }
+      stage('Run apex unit test to salesforce') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy entire metadata' }
+            }
+                steps {
+                    script {
+                        sh "sfdx force:apex:test:run -p /var/lib/jenkins/workspace/Saleforce-SG/neewone/force-app/main/default/classes -u my-hub-org"
+                    }
+                }
+        }
+    }
+}

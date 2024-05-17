@@ -1,0 +1,104 @@
+pipeline {
+    agent any
+
+        environment {
+
+        CLIENT_ID = credentials('salesforce-client-id-qa')
+        WORKSPACE_PATH = pwd()
+        TEST_RUN_ID = ''
+    }
+
+    parameters {
+        choice(name: 'DEPLOY_TYPE', choices: ['Deploy Entire metadata', 'Deploy Updated metadata'], description: 'Select deployment type')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Clone the Git repository
+                git branch: 'devops',
+                    credentialsId: 'dhana-devops-admin', // Replace with your credentials ID
+                    url: 'https://bitbucket.org/vcpl/salesforce-sg-qa/src/integration'
+            }
+        }
+
+        stage('Authenticate with Salesforce') {
+            steps {
+                // Authenticate with your Salesforce org using Salesforce CLI
+                sh 'sfdx auth:jwt:grant --clientid ${CLIENT_ID} --jwtkeyfile /var/lib/jenkins/openssl/bin/server.key --username mfiflex.code@88trialforce.com.sgvqa --setdefaultdevhubusername --setalias my-hub-org'
+            }
+        }
+
+        stage('Deploy Updated Metadata') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Updated metadata' }
+            }
+            steps {
+                // Get a list of changed files between the current and previous Git commits
+                script {
+                    def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^..HEAD").trim().split("\\n")
+                    // Filter out files that are not part of the Salesforce DX project (if needed)
+                    def sourceFiles = changedFiles.findAll { it.startsWith('force-app/') }
+                    
+                    if (!sourceFiles.isEmpty()) {
+                        // Deploy Deploy Updated metadata metadata files
+                        sh "sfdx force:source:deploy -u my-hub-org --sourcepath ${sourceFiles.join(',')}"
+                    } else {
+                        echo "No Salesforce metadata files changed. No deployment needed."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Entire Metadata') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Entire metadata' }
+            }
+            steps {
+                // Deploy the Deploy Entire metadata metadata
+                sh "sfdx force:source:deploy -p ${WORKSPACE_PATH}force-app/main/default/classes -u my-hub-org"
+            }
+        }
+
+        stage('Run testcases Updated metadata') {       
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Updated metadata' }
+            } 
+            steps {
+                script {
+                    // Get the list of recently modified Apex files
+                    def recentlyModifiedFiles = sh(script: "git diff --name-only HEAD^..HEAD | grep '.cls\$'", returnStdout: true).trim().split('\n')
+
+                    // Extract class names and corresponding test class names
+                    def testClassNames = recentlyModifiedFiles.collect { clsFile ->
+                        def className = clsFile.tokenize('/').last().tokenize('.')[0]
+                        def testClassName = className + 'Test'
+                        return [className, testClassName]
+                    }.flatten().join(',')
+
+                    // Run Apex unit tests with the extracted class names and capture test run ID
+                    def output = sh(script: "sfdx force:apex:test:run -c -u my-hub-org --classnames ${testClassNames} --code-coverage", returnStdout: true).trim()
+                         
+                    // Extract the test run ID
+                    def matcher = output =~ /-i\s+(\w+)/
+                    if (matcher.find()) {
+                        TEST_RUN_ID = matcher.group(1)
+                    } else {
+                        error "Failed to parse test run ID from the output"
+                    }
+                }
+            }
+        }
+
+        stage('Retrieve Test Results') { 
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Updated metadata' }
+            }
+            steps {
+                // Retrieve test results using the captured test run ID
+                sh "sfdx force:apex:test:report -i ${TEST_RUN_ID} -u mfiflex.code@88trialforce.com.sgvqa"
+            }
+        }
+
+    }
+}

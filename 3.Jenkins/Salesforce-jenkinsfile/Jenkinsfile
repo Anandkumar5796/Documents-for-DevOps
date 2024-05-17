@@ -1,0 +1,224 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                // Clone the Git repository
+                script {
+                    def gitRepo = 'https://bitbucket.org/vcpl/salesforce-sg-qa/src/integration'
+                    def gitBranch = 'devops'
+                    def gitCredentialsId = 'dhana-devops-admin' // Replace with the actual credentials ID in Jenkins
+
+                    git branch: gitBranch,
+                        credentialsId: gitCredentialsId,
+                        url: gitRepo
+                }
+            }
+        }
+
+        stage('Authenticate with Salesforce') {
+            steps {
+                // Authenticate with your Salesforce org using Salesforce CLI
+                sh 'sfdx auth:jwt:grant --clientid 3MVG9N6eDmZRVJOlkThyq5qlkqWZMOfuIO25JydjR7vhj_4MWrIcwaK6mpMK0diNNw5AWpjyz0jK0ZJ2gLLt6 --jwtkeyfile /var/lib/jenkins/openssl/bin/server.key --username mfiflex.code@88trialforce.com.sgvqa --setdefaultdevhubusername --setalias my-hub-org'
+            }
+        }
+
+    stage('Identify Changed Files') {
+            steps {
+                // Use Salesforce CLI to identify recently updated files
+                script {
+                    def changedFiles = sh script: 'sfdx force:source:status --json', returnStdout: true
+                    // Parse the JSON output to identify changed files
+                    // Example parsing logic: extract file paths from the JSON
+                    // For simplicity, let's assume changedFiles variable holds the list of file paths
+                    def changedFilePaths = parseChangedFilesJson(changedFiles)
+                    // Store the list of changed file paths in an environment variable
+                    env.CHANGED_FILES = changedFilePaths.join(',')
+                }
+            }
+        }
+
+
+
+    stage('Deploy Changed Files') {
+            when {
+                expression { env.CHANGED_FILES != null }
+            }
+            steps {
+                // Deploy only changed files to Salesforce org using Salesforce CLI
+                sh "sfdx force:source:deploy --sourcepath ${env.CHANGED_FILES} -u  my-hub-org"
+            }
+        }
+    }
+
+}
+
+
+        // stage('Check for Changes') {
+        //     steps {
+        //         // Get a list of updated files since the last deployment
+        //         script {
+        //             def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^ HEAD")
+        //             // You can also use git log, git diff-tree, or other Git commands to get the changed files list
+        //             env.CHANGED_FILES = changedFiles.trim()
+        //         }
+        //     }
+        // }
+
+//         stage('Deploy Updated Metadata') {
+//             steps {
+//                 // Get a list of changed files between the current and previous Git commits
+//                 script {
+//                     def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^..HEAD").trim().split("\\n")
+//                     // Filter out files that are not part of the Salesforce DX project (if needed)
+//                     def sourceFiles = changedFiles.findAll { it.startsWith('force-app/') }
+                    
+//                     if (!sourceFiles.isEmpty()) {
+//                         // Deploy updated metadata files
+//                         sh "sfdx force:source:deploy -u  my-hub-org --sourcepath ${sourceFiles.join(',')}"
+//                     } else {
+//                         echo "No Salesforce metadata files changed. No deployment needed."
+//                     }
+//                 }
+//             }
+//         }
+
+//     }  
+// }
+
+
+
+
+
+
+
+
+
+
+pipeline {
+    agent any
+     parameters{
+         booleanParam(name: 'Deploy to fullcode', defaultValue: false, description: 'Deploy to fullcode')
+         booleanParam(name: 'Run Apex unit test for fullcode', defaultValue: false, description: 'Run Apex unit test for fullcode')
+         booleanParam(name: 'Deploy to only updatedcode', defaultValue: false, description: 'Deploy to only updatedcode')
+         booleanParam(name: 'Run Apex unit test for only updatedcode', defaultValue: false, description: 'Run Apex unit test for only updatedcode')
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                // Clone the Git repository
+                script {
+                    def gitRepo = 'https://bitbucket.org/vcpl/salesforce-sg-qa/src/integration'
+                    def gitBranch = 'devops'
+                    def gitCredentialsId = 'dhana-devops-admin' // Replace with the actual credentials ID in Jenkins
+
+                    git branch: gitBranch,
+                        credentialsId: gitCredentialsId,
+                        url: gitRepo
+                }
+            }
+        }
+
+        stage('Authenticate with Salesforce') {
+            steps {
+                // Authenticate with your Salesforce org using Salesforce CLI
+                sh 'sfdx auth:jwt:grant --clientid 3MVG9N6eDmZRVJOlkThyq5qlkqWZMOfuIO25JydjR7vhj_4MWrIcwaK6mpMK0diNNw5AWpjyz0jK0ZJ2gLLt6 --jwtkeyfile /var/lib/jenkins/openssl/bin/server.key --username mfiflex.code@88trialforce.com.sgvqa --setdefaultdevhubusername --setalias my-hub-org'
+            }
+        }
+
+            stage('Check for Changes') {
+                steps {
+                    // Get a list of updated files since the last deployment
+                    script {
+                        def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^ HEAD")
+                        // You can also use git log, git diff-tree, or other Git commands to get the changed files list
+                        env.CHANGED_FILES = changedFiles.trim()
+                    }
+                }
+            }
+
+            stage('Deploy to salesforce') {
+                when {
+                    expression {params.Deploy to fullcode}
+                }                
+                steps {
+
+                    // Deploy both .cls and .xml files
+                    sh "sfdx force:source:deploy -p /var/lib/jenkins/workspace/lesforce-CI-CD-STAGE_integration/force-app/main/default/classes -u my-hub-org"
+                }
+            }
+
+            stage('Run apex unit test to salesforce') {
+                when {
+                    expression {
+                        return params['Run Apex unit test for fullcode']
+                    }
+                }
+                steps {
+                    script {
+                        sh "sfdx force:apex:test:run -p /var/lib/jenkins/workspace/lesforce-CI-CD-STAGE_integration/force-app/main/default/classes -u my-hub-org"
+                    }
+                }
+            }
+
+            stage('Generate and Deploy to Salesforce') {
+                when {
+                    expression {params.Deploy to only updatedcode}
+                }                
+                steps {
+                    script {
+                        // Get a list of new .cls files compared to the previous build
+                        def newClsFiles = sh(script: 'git diff --name-only HEAD^..HEAD | grep ".cls"', returnStdout: true).trim().split('\n')
+
+                        if (newClsFiles) {
+
+                            newClsFiles.each { clsFile ->
+                                // Generate .xml file for the .cls file
+                                def xmlFile = clsFile.replaceAll('.cls', '.cls-meta.xml')
+                                def xmlFileContent = """
+                                <ApexClass xmlns="http://soap.sforce.com/2006/04/metadata">
+                                    <apiVersion>52.0</apiVersion>
+                                    <status>Active</status>
+                                </ApexClass>
+                                """
+                                writeFile file: xmlFile, text: xmlFileContent
+
+                                // Deploy both .cls and .xml files
+                                sh "sfdx force:source:deploy -u my-hub-org --sourcepath ${clsFile},${xmlFile}"
+                            }
+                        }
+                    }
+                }
+            }
+
+            stage('Run Apex Unit Tests') {
+                when {
+                    expression {
+                        return params['Run Apex unit test for only updatedcode']
+                    }
+                }       
+                steps {
+                    script {
+                        def affectedClasses = sh(script: "git diff --name-only HEAD^ HEAD | grep '.cls'", returnStdout: true).trim()
+                        
+                        if (affectedClasses) {
+                            echo "Affected .cls files:"
+                            echo "${affectedClasses}"
+                            
+                            // Extract class names from filenames
+                            def classNames = affectedClasses.tokenize('\n').collect { it.replaceAll('.*/', '').replaceAll('.cls$', '') }
+                            
+                            // Run Apex tests for the affected classes
+                            sh "sfdx force:apex:test:run -u my-hub-org --synchronous --classnames ${classNames.join(',')}"
+                        } else {
+                            echo "No .cls files were affected."
+                        }
+                    }
+                }
+            }
+
+        }
+   }
+

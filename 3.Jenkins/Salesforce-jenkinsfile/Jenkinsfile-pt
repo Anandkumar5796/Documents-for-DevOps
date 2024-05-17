@@ -1,0 +1,62 @@
+pipeline {
+    agent any
+
+    environment {
+        CLIENT_ID = credentials('salesforce-client-id-qa')
+        JWT_KEY_FILE = credentials('salesforce-jwt-key-file')
+        SALESFORCE_USERNAME = 'mfiflex.code@88trialforce.com.sgvqa'
+    }
+
+    parameters {
+        choice(name: 'DEPLOY_TYPE', choices: ['Deploy Entire metadata', 'Deploy Updated metadata'], description: 'Select deployment type')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Clone the Git repository
+                git branch: 'devops',
+                    credentialsId: 'dhana-devops-admin', // Replace with your credentials ID
+                    url: 'https://bitbucket.org/vcpl/salesforce-sg-qa/src/integration'
+            }
+        }
+
+        stage('Authenticate with Salesforce') {
+            steps {
+                // Authenticate with your Salesforce org using Salesforce CLI
+                sh "sfdx auth:jwt:grant --clientid ${CLIENT_ID} --jwtkeyfile ${JWT_KEY_FILE} --username ${SALESFORCE_USERNAME} --setdefaultdevhubusername --setalias my-hub-org"
+            }
+        }
+
+        stage('Deploy Updated Metadata') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Updated metadata' }
+            }
+            steps {
+                // Get a list of changed files between the current and previous Git commits
+                script {
+                    def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^..HEAD").trim().split("\\n")
+                    // Filter out files that are not part of the Salesforce DX project (if needed)
+                    def sourceFiles = changedFiles.findAll { it.startsWith('force-app/') }
+                    
+                    if (!sourceFiles.isEmpty()) {
+                        // Deploy Deploy Updated metadata metadata files
+                        sh "sfdx force:source:deploy -u my-hub-org --sourcepath ${sourceFiles.join(',')}"
+                    } else {
+                        echo "No Salesforce metadata files changed. No deployment needed."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Entire Metadata') {
+            when {
+                expression { params.DEPLOY_TYPE == 'Deploy Entire metadata' }
+            }
+            steps {
+                // Deploy the Deploy Entire metadata metadata
+                sh "sfdx force:source:deploy -p /var/lib/jenkins/workspace/Saleforce-SG/neewone/force-app/main/default/classes -u my-hub-org"
+            }
+        }
+    }
+}

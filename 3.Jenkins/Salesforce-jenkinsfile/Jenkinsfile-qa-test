@@ -1,0 +1,47 @@
+pipeline {
+    agent any
+    
+    environment {
+        CLIENT_ID = credentials('salesforce-client-id-qa')
+        WORKSPACE_PATH = pwd()
+        
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Clone the Git repository
+                git branch: 'devops',
+                    credentialsId: 'dhana-devops-admin',
+                    url: 'https://bitbucket.org/vcpl/salesforce-sg-qa.git' // Corrected URL
+            }
+        }
+
+        stage('Authenticate with Salesforce') {
+            steps {
+                // Authenticate with your Salesforce org using Salesforce CLI
+                sh "sfdx auth:jwt:grant --clientid ${CLIENT_ID} --jwtkeyfile /var/lib/jenkins/openssl/bin/server.key --username mfiflex.code@88trialforce.com.sgvqa --setdefaultdevhubusername --setalias my-hub-org"
+            }
+        }
+
+        stage('Run Apex Unit Tests') {
+            steps {
+                script {
+                    def testRunId = params.TEST_RUN_ID
+           sh'sfdx force:apex:test:run -c -u my-hub-org --classnames AccountEODTriggerTest --code-coverage'
+           def testRunId = params.TEST_RUN_ID
+                }
+            }
+        }
+
+        stage('Retrieve Test Results') {
+            steps {
+                // Run Salesforce CLI command to retrieve test results
+                
+                sh "sfdx force:apex:test:report -i ${TEST_RUN_ID} -u mfiflex.code@88trialforce.com.sgvqa"
+            }
+        }
+
+
+    }
+}

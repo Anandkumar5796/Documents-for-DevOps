@@ -1,0 +1,87 @@
+pipeline {
+    agent any
+
+    stages {
+            stage('Clone Repository') {
+                steps {
+                    // Clone the Git repository
+                    script {
+                        def gitRepo = 'https://bitbucket.org/vcpl/salesforce-sg-test.git'
+                        def gitBranch = 'devops'
+                        def gitCredentialsId = 'dhana-devops-admin'
+
+                        git branch: gitBranch,
+                            credentialsId: gitCredentialsId,
+                            url: gitRepo
+                    }
+                }
+            }
+
+            stage('Authenticate with Salesforce') {
+                steps {
+                    // Authenticate with your Salesforce org using Salesforce CLI
+                    sh 'sfdx auth:jwt:grant --clientid 3MVG9rnryk9FxFMUfPoXQEeNGbzSiX1U7Rly9NbKOVISGd38.ejq_UWwu5UObm5apCgTX7Z8Z8tf1bOwUqfjg --jwtkeyfile /var/lib/jenkins/openssl/bin/server.key --username mfiflex.code@88trialforce.com.vstage --setdefaultdevhubusername --setalias my-hub-org'
+                }
+            }
+
+            stage('Check for Changes') {
+                steps {
+                    // Get a list of updated files since the last deployment
+                    script {
+                        def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^ HEAD")
+                        // You can also use git log, git diff-tree, or other Git commands to get the changed files list
+                        env.CHANGED_FILES = changedFiles.trim()
+                    }
+                }
+            }
+
+            stage('Generate and Deploy to Salesforce') {
+                steps {
+                    script {
+                        // Get a list of new .cls files compared to the previous build
+                        def newClsFiles = sh(script: 'git diff --name-only HEAD^..HEAD | grep ".cls"', returnStdout: true).trim().split('\n')
+
+                        if (newClsFiles) {
+
+                            newClsFiles.each { clsFile ->
+                                // Generate .xml file for the .cls file
+                                def xmlFile = clsFile.replaceAll('.cls', '.cls-meta.xml')
+                                def xmlFileContent = """
+                                <ApexClass xmlns="http://soap.sforce.com/2006/04/metadata">
+                                    <apiVersion>52.0</apiVersion>
+                                    <status>Active</status>
+                                </ApexClass>
+                                """
+                                writeFile file: xmlFile, text: xmlFileContent
+
+                                // Deploy both .cls and .xml files
+                                sh "sfdx force:source:deploy -u my-hub-org --sourcepath ${clsFile},${xmlFile}"
+                            }
+                        }
+                    }
+                }
+            }
+
+            stage('Run Apex Unit Tests') {
+                steps {
+                    script {
+                        def affectedClasses = sh(script: "git diff --name-only HEAD^ HEAD | grep '.cls'", returnStdout: true).trim()
+                        
+                        if (affectedClasses) {
+                            echo "Affected .cls files:"
+                            echo "${affectedClasses}"
+                            
+                            // Extract class names from filenames
+                            def classNames = affectedClasses.tokenize('\n').collect { it.replaceAll('.*/', '').replaceAll('.cls$', '') }
+                            
+                            // Run Apex tests for the affected classes
+                            sh "sfdx force:apex:test:run -u my-hub-org --synchronous --classnames ${classNames.join(',')}"
+                        } else {
+                            echo "No .cls files were affected."
+                        }
+                    }
+                }
+            }
+
+        }
+   }

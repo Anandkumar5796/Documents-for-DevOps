@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                // Clone the Git repository
+                script {
+                    def gitRepo = 'https://bitbucket.org/vcpl/salesforce-sg-qa/src/integration'
+                    def gitBranch = 'devops'
+                    def gitCredentialsId = 'dhana-devops-admin' // Replace with the actual credentials ID in Jenkins
+
+                    git branch: gitBranch,
+                        credentialsId: gitCredentialsId,
+                        url: gitRepo
+                }
+            }
+        }
+
+        stage('Authenticate with Salesforce') {
+            steps {
+                // Authenticate with your Salesforce org using Salesforce CLI
+                sh 'sfdx auth:jwt:grant --clientid 3MVG9N6eDmZRVJOlkThyq5qlkqWZMOfuIO25JydjR7vhj_4MWrIcwaK6mpMK0diNNw5AWpjyz0jK0ZJ2gLLt6 --jwtkeyfile /var/lib/jenkins/openssl/bin/server.key --username mfiflex.code@88trialforce.com.sgvqa --setdefaultdevhubusername --setalias my-hub-org'
+            }
+        }
+
+        stage('Check for Changes') {
+            steps {
+                // Get a list of updated files since the last deployment
+                script {
+                    def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^ HEAD")
+                    // You can also use git log, git diff-tree, or other Git commands to get the changed files list
+                    env.CHANGED_FILES = changedFiles.trim()
+                }
+            }
+        }
+
+        stage('Deploy Updated Metadata') {
+            steps {
+                // Get a list of changed files between the current and previous Git commits
+                script {
+                    def changedFiles = sh(returnStdout: true, script: "git diff --name-only HEAD^..HEAD").trim().split("\\n")
+                    // Filter out files that are not part of the Salesforce DX project (if needed)
+                    def sourceFiles = changedFiles.findAll { it.startsWith('force-app/') }
+                    
+                    if (!sourceFiles.isEmpty()) {
+                        // Deploy updated metadata files
+                        sh "sfdx force:source:deploy -u  my-hub-org --sourcepath ${sourceFiles.join(',')}"
+                    } else {
+                        echo "No Salesforce metadata files changed. No deployment needed."
+                    }
+                }
+            }
+        }
+
+    stage('Deploy Full Metadata') {
+                steps {
+                    // Deploy both .cls and .xml files
+                    sh "sfdx force:source:deploy -p /var/lib/jenkins/workspace/Saleforce-SG/neewone/force-app/main/default/classes -u my-hub-org"
+                    }
+              }  
+          }
+      }
